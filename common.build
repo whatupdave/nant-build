@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project name="Common" basedir="..">
+
+  <!-- Project defaults -->
+  <property name="build.debug" value="true"/>
+  <property name="build.output" value="output/"/>
+  <property name="build.production" value="false"/>
+  <property name="build.optimize" value="false"/>
+  <property name="build.defines" value=""/>
+  <property name="build.requires_internet" value="false" unless="${property::exists('build.requires_internet')}"/>
+  <property name="assembly.sign" value="false" />
+  <property name="ncover.path" value="tools/NCover/"/>
+  <property name="ncover.dlls" value="${project::get-name()}.Tests.dll"/>
+  <property name="build.label" value="0.0.0.0" unless="${property::exists('CCNetLabel')}"/>
+  <property name="build.label" value="${CCNetLabel}" if="${property::exists('CCNetLabel')}"/>
+  <property name="assembly.version" value="${build.label}"/>
+  <property name="architecture" value="${environment::get-variable('PROCESSOR_ARCHITECTURE')}" />
+  <property name="build.aspnet_compiler" value="${framework::get-framework-directory('net-2.0')}/aspnet_compiler.exe" />
+
+  <property name="settings.local" value="build\settings.${string::to-lower(environment::get-machine-name())}.xml" />
+
+  <if test="${not property::exists('ncover.assemblies')}">
+    <property name="ncover.assemblies" value="${project::get-name()}"/>
+  </if>
+
+  <if test="${build.requires_internet}">
+    <property name="test.property" value="initial"/>
+    <script language="C#" mainclass="TestNetConnection">
+      <code>
+        <![CDATA[
+          class TestNetConnection {
+            public static void ScriptMain(Project project) {
+              bool hasConnection = true;
+              try {
+                System.Net.NetworkInformation.IPStatus status = new System.Net.NetworkInformation.Ping().Send("http://google.com", 2000).Status;
+                hasConnection = (status == System.Net.NetworkInformation.IPStatus.Success);
+              } catch {
+                hasConnection = false;
+              }
+              project.Properties["env.has_internet_connection"] = hasConnection.ToString();
+            }
+          }]]>
+      </code>
+    </script>
+  </if>
+
+
+  <include buildfile="settings.default.xml" />
+
+  <echo message="------------------------------------------------------------" />
+  <echo message="${project::get-name()} ${build.label}" />
+  <echo message="${directory::get-current-directory()}" />
+  <echo message="------------------------------------------------------------" />
+  <echo message="${environment::get-machine-name()} (${platform::get-name()}/${architecture})" />
+
+  <!--Overwrite with machine specifics if necessary-->
+  <if test="${file::exists(settings.local)}">
+    <echo message="Loading ${settings.local}" />
+    <include buildfile="${settings.local}" />
+  </if>
+  <echo message="Using default settings" unless="${file::exists(settings.local)}" />
+  <echo message="INTERNET CONNECTION UNAVAILABLE" if="${property::exists('env.has_internet_connection') and not env.has_internet_connection}" />
+  <echo message="------------------------------------------------------------" />
+  <echo message="Target Framework: ${framework::get-target-framework()}" />
+  <echo message="${framework::get-framework-directory(framework::get-target-framework())}" />
+  <echo message="${framework::get-sdk-directory(framework::get-target-framework())}" />
+  <echo message="" />
+  <echo message="NCover: ${ncover.path}" if="${ncover.path != 'tools\NCover'}" />
+  
+  <target name="common.compile-dll">
+    <echo message="Compiling DLL: ${compile.assembly}" />
+    <assemblyfileset id="compile.references">
+      <include name="lib/**/*.dll" />
+      <include name="${build.output}${project::get-name()}*.dll" />
+      <include name="${build.output}${project::get-name()}*.exe" />
+      <exclude name="${build.output}${compile.assembly}.dll" />
+    </assemblyfileset>
+
+    <csc
+      target="library"
+      define="${build.defines}"
+      debug="${build.debug}"
+      optimize="${build.optimize}"
+      output="${build.output}${compile.assembly}.dll"
+      doc="${build.output}${compile.assembly}.xml">
+      <nowarn>
+        <warning number="1591"/>
+        <!-- No XML comment for publicly visible member -->
+      </nowarn>
+      <sources refid="compile.sources" />
+      <references refid="compile.references" />
+      <resources refid="compile.resources" />
+    </csc>
+
+    <copy todir="${build.output}" flatten="true">
+      <fileset refid="compile.references" />
+    </copy>
+  </target>
+
+  <target name="common.compile-exe">
+    <echo message="Compiling EXE: ${compile.assembly}" />
+    <assemblyfileset id="compile.references">
+      <include name="lib/**/*.dll" />
+      <include name="${build.output}${project::get-name()}*.dll" />
+      <include name="${build.output}${project::get-name()}*.exe" />
+      <exclude name="${build.output}${compile.assembly}.exe" />
+    </assemblyfileset>
+
+    <csc
+      target="winexe"
+      define="${build.defines}"
+      debug="${build.debug}"
+      optimize="${build.optimize}"
+      output="${build.output}${compile.assembly}.exe"
+      doc="${build.output}${compile.assembly}.xml">
+      <nowarn>
+        <warning number="1591"/>
+        <!-- No XML comment for publicly visible member -->
+      </nowarn>
+      <sources refid="compile.sources" />
+      <references refid="compile.references" />
+      <resources refid="compile.resources" />
+    </csc>
+
+    <copy todir="${build.output}" flatten="true">
+      <fileset refid="compile.references" />
+    </copy>
+  </target>
+  
+  <fileset id="compile.resources">
+  </fileset>
+
+  <!-- Asembly Info -->
+
+  <property name="assembly.allow-partially-trusted-callers" value="true" />
+  <property name="assembly.is-cls-compliant" value="true" />
+  <property name="assembly.is-com-visible" value="true" />
+  <property name="assembly.guid" value="" />
+  <property name="assembly.version.informational" value="${assembly.version}" />
+  <property name="assembly.language" value="CSharp" />
+
+  <target name="common.generate-assemblyinfo" description="Generate AssemblyInfo.cs using assembly.* properties.">
+    <asminfo output="${assembly.info}" language="${assembly.language}">
+      <imports>
+        <import namespace="System" />
+        <import namespace="System.Reflection" />
+        <import namespace="System.Runtime.CompilerServices" />
+        <import namespace="System.Runtime.InteropServices" />
+        <import namespace="System.Security" if="${assembly.allow-partially-trusted-callers}" />
+      </imports>
+      <attributes>
+        <attribute type="ComVisibleAttribute" value="${assembly.is-com-visible}" />
+        <attribute type="GuidAttribute" value="${assembly.guid}" if="${assembly.guid != ''}" />
+        <attribute type="AssemblyTitleAttribute" value="${assembly.title}" />
+        <attribute type="AssemblyDescriptionAttribute" value="${assembly.description}" />
+        <attribute type="AssemblyCompanyAttribute" value="${assembly.company}" />
+        <attribute type="AssemblyProductAttribute" value="${assembly.product}" />
+        <attribute type="AssemblyCopyrightAttribute" value="${assembly.copyright}" />
+        <attribute type="AssemblyVersionAttribute" value="${assembly.version}" />
+        <attribute type="AssemblyInformationalVersionAttribute" value="${assembly.version.informational}" />
+        <attribute type="AssemblyFileVersionAttribute" value="${assembly.version.informational}" />
+        <attribute type="AssemblyDelaySignAttribute" value="false" />
+
+        <!-- For some reason, NAnt doesn't detect that APTCA has a public no-argument constructor -->
+        <attribute asis="true" type="AllowPartiallyTrustedCallersAttribute" if="${assembly.allow-partially-trusted-callers}" />
+      </attributes>
+    </asminfo>
+  </target>
+
+  <!-- NCover -->
+  <target name="common.coverage">
+    <loadtasks assembly="tools\NCover\NCoverExplorer.NAntTasks.dll"/>
+
+    <ncover
+      program="${ncover.path}\NCover.Console.exe"
+      commandLineExe="tools\NUnit\nUnit-console.exe"
+      workingDirectory="${build.output}"
+      commandLineArgs="${ncover.dlls} /xml=${project::get-name()}.Test-Results.xml"
+      coverageFile="${build.output}\ncover.xml"
+      assemblyList="${ncover.assemblies}"
+      excludeAttributes="CoverageExcludeAttribute"
+      registerProfiler="true">
+    </ncover>
+
+    <exec program="${ncover.path}\nCoverExplorer.Console.exe"
+     workingdir="${build.output}" >
+      <arg value="ncover.xml" />
+      <arg value="/r:5"/>
+      <arg value="/x:coverage-results.xml" />
+      <arg value="/h:coverage-results.html" />
+      <arg value="/p:${project::get-name()}" />
+      <arg value="/m:70" />
+      <arg value="/fc" />
+    </exec>
+  </target>
+
+  <target name="common.coverage.show">
+    <exec program="${ncover.path}NCoverExplorer.exe">
+      <arg value="${build.output}ncover.xml" />
+    </exec>
+          
+  </target>
+
+</project>
